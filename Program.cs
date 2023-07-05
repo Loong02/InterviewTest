@@ -1,4 +1,8 @@
 ﻿using System.Text;
+using System.Collections.Concurrent;
+using System;
+using System.Diagnostics;
+using System.Reflection.PortableExecutable;
 
 namespace Test
 {
@@ -36,7 +40,23 @@ namespace Test
 
             Console.WriteLine(shop.Print(drink2));
 
-            Console.ReadLine();
+            // 开始制作
+            shop.StartMake();
+
+            Task.Delay(1000).Wait();
+
+            // 添加订单
+            shop.AddBill(drink);
+
+            Task.Delay(2000).Wait();
+
+            // 添加订单
+            shop.AddBill(drink2);
+
+            Console.ReadKey();
+
+            // 停止制作
+            shop.StopMake();
         }
     }
 
@@ -49,12 +69,14 @@ namespace Test
         /// 配料类型与规格描述器的存储
         /// </summary>
         private readonly Dictionary<Type, ILevelDescription> _ingredientDescriptionSetting;
-        private readonly Queue<Drink> _drinks;
+        private readonly ConcurrentQueue<Drink> _drinks;
+        private readonly CancellationTokenSource _source;
 
         public Shop()
         {
             _ingredientDescriptionSetting = new Dictionary<Type, ILevelDescription>();
-            _drinks = new Queue<Drink>();
+            _drinks = new ConcurrentQueue<Drink>();
+            _source = new CancellationTokenSource();
         }
 
         /// <summary>
@@ -69,9 +91,43 @@ namespace Test
             return this;
         }
 
-        public void AddBill(Drink drink)
+        /// <summary>
+        /// 顾客下单，添加饮品, 返回前面还有多少单
+        /// </summary>
+        /// <param name="drink"></param>
+        public int AddBill(Drink drink)
         {
             _drinks.Enqueue(drink);
+            return _drinks.Count;
+        }
+
+        /// <summary>
+        /// 开始制作
+        /// </summary>
+        public void StartMake()
+        {
+            // 多个人就创建多个线程，并发消费
+            var task = new Task(() =>
+            {
+                while (true)
+                {
+                    if (!_drinks.TryDequeue(out var drink))
+                    {
+                        continue;
+                    }
+
+                    Print(drink);
+                }
+            }, _source.Token, TaskCreationOptions.LongRunning);
+            task.Start();
+        }
+
+        /// <summary>
+        /// 员工停止制作
+        /// </summary>
+        public void StopMake()
+        {
+            _source.Cancel();
         }
 
         /// <summary>
@@ -326,4 +382,220 @@ namespace Test
     }
 
     #endregion
+
+
+
+
+
+    //public class House
+    //{
+    //    public readonly Switch _switch;
+    //    public readonly List<IElectricMachine> _machines;
+
+    //    public House()
+    //    {
+    //        _switch = new Switch();
+    //        _machines = new List<IElectricMachine>();
+    //    }
+
+    //    public void AddElectricMachine(IElectricMachine machine)
+    //    {
+    //        _machines.Add(machine);
+    //        _switch.Connect(machine);
+    //    }
+
+    //    public void RemoveElectricMachine(int index)
+    //    {
+    //        if (_machines.Count > index)
+    //        {
+    //            var machine = _machines[index];
+    //            _machines.RemoveAt(index);
+    //            _switch.Disconnect(machine);
+    //        }
+    //    }
+
+    //    public void ElectricSwitch(bool isOn)
+    //    {
+    //        if (isOn)
+    //        {
+    //            _switch.On();
+    //        }
+    //        else
+    //        {
+    //            _switch.Off();
+    //        }
+    //    }
+    //}
+
+    //public delegate void SwitchChange();
+
+    //public class Switch : IDisposable
+    //{
+    //    private event SwitchChange SwitchOn;
+
+    //    private event SwitchChange SwitchOff;
+
+    //    private readonly CancellationTokenSource _source;
+
+    //    public Switch()
+    //    {
+    //        _source = new CancellationTokenSource();
+    //    }
+
+    //    public void Off()
+    //    {
+    //        _source.Cancel();
+    //        SwitchOff?.Invoke();
+    //    }
+
+    //    public void On()
+    //    {
+    //        var task = new Task(() =>
+    //        {
+    //            while (true)
+    //            {
+    //                Task.Delay(1000).Wait();
+    //                SwitchOn?.Invoke();
+    //            }
+    //        }, _source.Token, TaskCreationOptions.LongRunning);
+    //        task.Start();
+    //    }
+
+    //    public void Connect(IElectricMachine machine)
+    //    {
+    //        SwitchOn += machine.SwitchOn;
+
+    //        SwitchOff += machine.SwitchOff;
+    //    }
+
+    //    public void Disconnect(IElectricMachine machine)
+    //    {
+    //        SwitchOn -= machine.SwitchOn;
+
+    //        SwitchOff -= machine.SwitchOff;
+    //    }
+
+    //    public void Dispose()
+    //    {
+    //        var onDelegates = SwitchOn.GetInvocationList();
+    //        if (onDelegates?.Length > 0)
+    //        {
+    //            foreach (var item in onDelegates)
+    //            {
+    //                SwitchOn -= (SwitchChange)item;
+    //            }
+    //        }
+
+    //        var offDelegates = SwitchOff.GetInvocationList();
+    //        if (offDelegates?.Length > 0)
+    //        {
+    //            foreach (var item in offDelegates)
+    //            {
+    //                SwitchOff -= (SwitchChange)item;
+    //            }
+    //        }
+    //    }
+    //}
+
+    //public interface IElectricMachine
+    //{
+    //    void SwitchOn();
+    //    void SwitchOff();
+    //}
+
+    //public class Oven : IElectricMachine
+    //{
+    //    public void SwitchOff()
+    //    {
+    //        Console.WriteLine("面包烤好了");
+    //    }
+
+    //    public void SwitchOn()
+    //    {
+    //        Console.WriteLine("烤面包中");
+    //    }
+    //}
+
+    //public class Bulb : IElectricMachine
+    //{
+    //    public void SwitchOff()
+    //    {
+    //        Console.WriteLine("变暗了");
+    //    }
+
+    //    public void SwitchOn()
+    //    {
+    //        Console.WriteLine("照亮了");
+    //    }
+    //}
+
+    //public class TV : IElectricMachine
+    //{
+    //    public void SwitchOff()
+    //    {
+    //        Console.WriteLine("息屏了");
+    //    }
+
+    //    public void SwitchOn()
+    //    {
+    //        Console.WriteLine("播放电视中");
+    //    }
+    //}
+
+    public enum EMachineStatus
+    {
+        Running,
+        Stop,
+        Error
+    }
+
+    public interface IElectricMachine
+    {
+        void SwitchOn();
+        void SwitchOff();
+    }
+
+    public abstract class ElectricMachine : IElectricMachine
+    {
+        private EMachineStatus _status;
+
+        public ElectricMachine(EMachineStatus status)
+        {
+            _status = status;
+        }
+
+        public void SwitchOff()
+        {
+            while(true)
+            {
+                if (true)
+                {
+
+                } (CurrentStatus == EMachineStatus.Running) break;
+            }
+            throw new NotImplementedException();
+        }
+
+        public void SwitchOn()
+        {
+            throw new NotImplementedException();
+        }
+
+        public abstract void On();
+
+        public abstract void Off();
+    }
+
+    public class TV : ElectricMachine
+    {
+        public override void Off()
+        {
+            throw new NotImplementedException();
+        }
+
+        public override void On()
+        {
+            throw new NotImplementedException();
+        }
+    }
 }
